@@ -1,0 +1,82 @@
+name: ArisNetwork Professional Automated Builder
+on: 
+  push:
+    paths:
+      - '**.jar'
+  workflow_dispatch:
+
+jobs:
+  full-rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java Environment
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Decompile, Rebrand & Rebuild
+        run: |
+          mkdir -p src_raw output lib classes_out
+
+          # 1. Tải công cụ dịch ngược CFR [cite: 1, 11]
+          wget https://www.benf.org/other/cfr/cfr-0.152.jar -O cfr.jar
+
+          # 2. Tải Spigot API (Link đã kiểm tra hoạt động 100%) 
+          wget https://hub.spigotmc.org/nexus/content/repositories/snapshots/org/spigotmc/spigot-api/1.20.1-R0.1-SNAPSHOT/spigot-api-1.20.1-R0.1-20230711.094553-33.jar -O lib/spigot-api.jar
+
+          for plugin in *.jar; do
+            if [[ "$plugin" != "cfr.jar" && "$plugin" != "lib/spigot-api.jar" ]]; then
+              echo "--- Đang xử lý: $plugin ---"
+              
+              # 3. Dịch ngược JAR sang mã nguồn Java [cite: 4]
+              java -jar cfr.jar "$plugin" --outputdir src_raw
+              
+              # 4. Xóa các package mã độc (Debugger/Javassist) 
+              rm -rf src_raw/com/thiccindustries
+              rm -rf src_raw/javassist
+              
+              # 5. Đổi tên Package và Class trong code .java 
+              find src_raw -type f -name "*.java" -exec sed -i 's/org\.shyamstudio\.donutTPA/me\.aris\.ArisTPA\.ArisTPA/g' {} +
+              find src_raw -type f -name "*.java" -exec sed -i 's/DonutTPA/ArisTPA/g' {} +
+
+              # 6. Tái cấu trúc thư mục theo Package mới [cite: 6]
+              mkdir -p src_rebuild/me/aris/ArisTPA/ArisTPA
+              if [ -d "src_raw/org/shyamstudio/donutTPA" ]; then
+                cp -r src_raw/org/shyamstudio/donutTPA/* src_rebuild/me/aris/ArisTPA/ArisTPA/
+                # Đổi tên file Java chính [cite: 7]
+                mv src_rebuild/me/aris/ArisTPA/ArisTPA/DonutTPA.java src_rebuild/me/aris/ArisTPA/ArisTPA/ArisTPA.java || true
+              fi
+
+              # 7. Sửa file cấu hình plugin.yml [cite: 8]
+              if [ -f "src_raw/plugin.yml" ]; then
+                sed -i 's/main: .*/main: me.aris.ArisTPA.ArisTPA.ArisTPA/g' src_raw/plugin.yml
+                sed -i 's/name: .*/name: ArisTPA/g' src_raw/plugin.yml
+                sed -i 's/author: .*/author: VennLMAO/g' src_raw/plugin.yml
+                cp src_raw/plugin.yml classes_out/
+              fi
+              # Sao chép các file bổ sung (nếu có)
+              cp src_raw/*.yml src_raw/*.json classes_out/ 2>/dev/null || true
+
+              # 8. Biên dịch lại từ Java sang Class [cite: 8]
+              find src_rebuild -name "*.java" > sources.txt
+              javac -cp "lib/*" -d classes_out @sources.txt
+
+              # 9. Đóng gói thành JAR sạch hoàn toàn [cite: 9]
+              cd classes_out
+              jar -cvf "../ArisTPA_VennLMAO.jar" .
+              cd ..
+              
+              mv ArisTPA_VennLMAO.jar output/ArisTPA_VennLMAO.jar
+            fi
+          done
+
+      - name: Upload Clean ArisTPA (v4)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArisTPA-Final-Build
+          path: output/
+          retention-days: 1
