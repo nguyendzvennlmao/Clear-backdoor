@@ -1,4 +1,4 @@
-name: ArisNetwork Rebrander v4
+name: ArisNetwork Java Rebuilder
 on: 
   push:
     paths:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  rebrand-and-clean:
+  decompile-rebuild:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -18,60 +18,51 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Transform to ArisTPA Structure
+      - name: Decompile and Rebrand
         run: |
+          mkdir -p src_temp
           mkdir -p output
-          sudo apt-get install zip unzip -y
+          
+          # 1. Tải bộ dịch ngược CFR
+          wget https://www.benf.org/other/cfr/cfr-0.152.jar -O cfr.jar
 
           for plugin in *.jar; do
-            echo "--- Đang xử lý: $plugin ---"
+            echo "--- Đang phẫu thuật: $plugin ---"
             
-            # 1. XÓA MÃ ĐỘC (Dựa trên ảnh scan của bạn)
-            # Xóa sạch debugger và các thư viện builder lây lan
-            zip -d "$plugin" "com/thiccindustries/debugger/*" || true
-            zip -d "$plugin" "javassist/*" || true
-            zip -d "$plugin" "org/javassist/*" || true
-            zip -d "$plugin" "me/lucko/jarrelocator/*" || true
+            # 2. Dịch ngược file JAR sang mã nguồn Java (.java)
+            java -jar cfr.jar "$plugin" --outputdir src_temp
+            
+            # 3. Xóa các package mã độc trong source code vừa dịch ngược
+            rm -rf src_temp/com/thiccindustries
+            rm -rf src_temp/javassist
+            
+            # 4. Đổi tên Package & Class trong toàn bộ mã nguồn
+            # Tìm và thay thế chuỗi trong các file .java
+            find src_temp -type f -name "*.java" -exec sed -i 's/org\.shyamstudio\.donutTPA/me\.aris\.ArisTPA\.ArisTPA/g' {} +
+            find src_temp -type f -name "*.java" -exec sed -i 's/DonutTPA/ArisTPA/g' {} +
 
-            # 2. GIẢI NÉN ĐỂ TÁI CẤU TRÚC (Re-Package)
-            mkdir temp_jar
-            unzip "$plugin" -d temp_jar
-            
-            # Tạo đường dẫn mới: me/aris/ArisTPA/ArisTPA
-            NEW_PATH="temp_jar/me/aris/ArisTPA/ArisTPA"
-            mkdir -p "$NEW_PATH"
-            
-            # Di chuyển code từ DonutTPA sang ArisTPA
-            # Giả định source gốc nằm ở org/shyamstudio/donutTPA
-            if [ -d "temp_jar/org/shyamstudio/donutTPA" ]; then
-                cp -r temp_jar/org/shyamstudio/donutTPA/* "$NEW_PATH/"
-                rm -rf temp_jar/org
+            # 5. Sắp xếp lại thư mục theo chuẩn Package mới
+            mkdir -p src_rebuild/me/aris/ArisTPA/ArisTPA
+            # Di chuyển code từ thư mục cũ sang mới (nếu tồn tại)
+            if [ -d "src_temp/org/shyamstudio/donutTPA" ]; then
+              cp -r src_temp/org/shyamstudio/donutTPA/* src_rebuild/me/aris/ArisTPA/ArisTPA/
+              # Đổi tên file Java chính
+              mv src_rebuild/me/aris/ArisTPA/ArisTPA/DonutTPA.java src_rebuild/me/aris/ArisTPA/ArisTPA/ArisTPA.java || true
             fi
 
-            # 3. ĐỔI CHUỖI VĂN BẢN TRONG CODE & CẤU HÌNH
-            # Sửa đổi mọi tham chiếu từ package cũ sang package mới của Aris
-            find temp_jar -type f -exec sed -i 's/org\.shyamstudio\.donutTPA/me\.aris\.ArisTPA\.ArisTPA/g' {} +
-            find temp_jar -type f -exec sed -i 's/DonutTPA/ArisTPA/g' {} +
+            # 6. Biên dịch (Compile) lại từ Java sang Class
+            # Lưu ý: Cần các thư viện (lib) của Minecraft/Spigot để build không lỗi
+            # Ở đây mình sẽ đóng gói lại source sạch để bạn tự build hoặc dùng script nén
             
-            # Đặc biệt sửa file plugin.yml để server nhận diện đúng Main Class
-            if [ -f "temp_jar/plugin.yml" ]; then
-                sed -i 's/main: .*/main: me.aris.ArisTPA.ArisTPA.ArisTPA/g' temp_jar/plugin.yml
-                sed -i 's/name: .*/name: ArisTPA/g' temp_jar/plugin.yml
-                sed -i 's/author: .*/author: VennLMAO/g' temp_jar/plugin.yml
-            fi
-
-            # 4. ĐÓNG GÓI LẠI (Re-build)
-            cd temp_jar
-            zip -r "../ArisTPA_Cleaned.jar" .
+            cd src_rebuild
+            zip -r "../ArisTPA_Source_Clean.zip" .
             cd ..
             
-            mv ArisTPA_Cleaned.jar "output/ArisTPA_VennLMAO.jar"
-            rm -rf temp_jar
+            mv ArisTPA_Source_Clean.zip output/ArisTPA_Source_VennLMAO.zip
           done
 
-      - name: Upload ArisTPA Artifact (v4)
+      - name: Upload Clean Source
         uses: actions/upload-artifact@v4
         with:
-          name: ArisTPA-Clean-Version
+          name: ArisTPA-Source-Code
           path: output/
-          retention-days: 1
