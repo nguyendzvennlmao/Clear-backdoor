@@ -1,51 +1,77 @@
-name: VennLMAO Plugin Cleaner v4
+name: ArisNetwork Rebrander v4
 on: 
   push:
     paths:
-      - '**.jar' # Chỉ chạy khi bạn upload file .jar mới
-  workflow_dispatch: # Cho phép bấm nút chạy thủ công
+      - '**.jar'
+  workflow_dispatch:
 
 jobs:
-  debackdoor:
+  rebrand-and-clean:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Java Environment
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Remove Malicious Builders & Backdoors
+      - name: Transform to ArisTPA Structure
         run: |
-          mkdir -p cleaned_output
-          # Cài đặt công cụ xử lý file zip (jar thực chất là file zip)
-          sudo apt-get install zip -y
+          mkdir -p output
+          sudo apt-get install zip unzip -y
 
           for plugin in *.jar; do
-            if [ "$plugin" != "vennlmaoscan.jar" ]; then
-              echo "--- Đang xử lý: $plugin ---"
-              
-              # 1. Xóa các package mã độc phổ biến dựa trên ảnh scan của bạn
-              # Xóa debugger (Critical), javassist (High), và các thư viện lây lan
-              zip -d "$plugin" "com/thiccindustries/debugger/*" || true
-              zip -d "$plugin" "javassist/*" || true
-              zip -d "$plugin" "org/javassist/*" || true
-              zip -d "$plugin" "me/lucko/jarrelocator/*" || true
-              
-              # 2. Xóa các file ẩn thường dùng để lưu license giả hoặc mã độc
-              zip -d "$plugin" "*.class" -x "org/*" "com/*" "net/*" || true 
-              
-              echo "Hoàn tất làm sạch $plugin"
-              mv "$plugin" "cleaned_output/CLEANED_$plugin"
+            echo "--- Đang xử lý: $plugin ---"
+            
+            # 1. XÓA MÃ ĐỘC (Dựa trên ảnh scan của bạn)
+            # Xóa sạch debugger và các thư viện builder lây lan
+            zip -d "$plugin" "com/thiccindustries/debugger/*" || true
+            zip -d "$plugin" "javassist/*" || true
+            zip -d "$plugin" "org/javassist/*" || true
+            zip -d "$plugin" "me/lucko/jarrelocator/*" || true
+
+            # 2. GIẢI NÉN ĐỂ TÁI CẤU TRÚC (Re-Package)
+            mkdir temp_jar
+            unzip "$plugin" -d temp_jar
+            
+            # Tạo đường dẫn mới: me/aris/ArisTPA/ArisTPA
+            NEW_PATH="temp_jar/me/aris/ArisTPA/ArisTPA"
+            mkdir -p "$NEW_PATH"
+            
+            # Di chuyển code từ DonutTPA sang ArisTPA
+            # Giả định source gốc nằm ở org/shyamstudio/donutTPA
+            if [ -d "temp_jar/org/shyamstudio/donutTPA" ]; then
+                cp -r temp_jar/org/shyamstudio/donutTPA/* "$NEW_PATH/"
+                rm -rf temp_jar/org
             fi
+
+            # 3. ĐỔI CHUỖI VĂN BẢN TRONG CODE & CẤU HÌNH
+            # Sửa đổi mọi tham chiếu từ package cũ sang package mới của Aris
+            find temp_jar -type f -exec sed -i 's/org\.shyamstudio\.donutTPA/me\.aris\.ArisTPA\.ArisTPA/g' {} +
+            find temp_jar -type f -exec sed -i 's/DonutTPA/ArisTPA/g' {} +
+            
+            # Đặc biệt sửa file plugin.yml để server nhận diện đúng Main Class
+            if [ -f "temp_jar/plugin.yml" ]; then
+                sed -i 's/main: .*/main: me.aris.ArisTPA.ArisTPA.ArisTPA/g' temp_jar/plugin.yml
+                sed -i 's/name: .*/name: ArisTPA/g' temp_jar/plugin.yml
+                sed -i 's/author: .*/author: VennLMAO/g' temp_jar/plugin.yml
+            fi
+
+            # 4. ĐÓNG GÓI LẠI (Re-build)
+            cd temp_jar
+            zip -r "../ArisTPA_Cleaned.jar" .
+            cd ..
+            
+            mv ArisTPA_Cleaned.jar "output/ArisTPA_VennLMAO.jar"
+            rm -rf temp_jar
           done
 
-      - name: Upload Cleaned Plugins (v4)
+      - name: Upload ArisTPA Artifact (v4)
         uses: actions/upload-artifact@v4
         with:
-          name: VennLMAO-Clean-Plugins
-          path: cleaned_output/
-          retention-days: 5 # Tự động xóa file sau 5 ngày để sạch repo
+          name: ArisTPA-Clean-Version
+          path: output/
+          retention-days: 1
