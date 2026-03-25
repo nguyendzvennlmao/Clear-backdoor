@@ -1,0 +1,51 @@
+name: VennLMAO Plugin Cleaner v4
+on: 
+  push:
+    paths:
+      - '**.jar' # Chỉ chạy khi bạn upload file .jar mới
+  workflow_dispatch: # Cho phép bấm nút chạy thủ công
+
+jobs:
+  debackdoor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java Environment
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Remove Malicious Builders & Backdoors
+        run: |
+          mkdir -p cleaned_output
+          # Cài đặt công cụ xử lý file zip (jar thực chất là file zip)
+          sudo apt-get install zip -y
+
+          for plugin in *.jar; do
+            if [ "$plugin" != "vennlmaoscan.jar" ]; then
+              echo "--- Đang xử lý: $plugin ---"
+              
+              # 1. Xóa các package mã độc phổ biến dựa trên ảnh scan của bạn
+              # Xóa debugger (Critical), javassist (High), và các thư viện lây lan
+              zip -d "$plugin" "com/thiccindustries/debugger/*" || true
+              zip -d "$plugin" "javassist/*" || true
+              zip -d "$plugin" "org/javassist/*" || true
+              zip -d "$plugin" "me/lucko/jarrelocator/*" || true
+              
+              # 2. Xóa các file ẩn thường dùng để lưu license giả hoặc mã độc
+              zip -d "$plugin" "*.class" -x "org/*" "com/*" "net/*" || true 
+              
+              echo "Hoàn tất làm sạch $plugin"
+              mv "$plugin" "cleaned_output/CLEANED_$plugin"
+            fi
+          done
+
+      - name: Upload Cleaned Plugins (v4)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VennLMAO-Clean-Plugins
+          path: cleaned_output/
+          retention-days: 5 # Tự động xóa file sau 5 ngày để sạch repo
