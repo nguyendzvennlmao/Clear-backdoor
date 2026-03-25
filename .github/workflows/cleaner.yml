@@ -1,4 +1,4 @@
-name: ArisNetwork Professional Automated Builder
+name: ArisNetwork Java Rebuilder Fixed
 on: 
   push:
     paths:
@@ -20,70 +20,60 @@ jobs:
 
       - name: Decompile, Rebrand & Rebuild
         run: |
-          mkdir -p src_raw
-          mkdir -p output
-          mkdir -p lib # Thư mục chứa các APIs Minecraft
-          mkdir -p classes_out # Thư mục chứa file .class mới
+          mkdir -p src_raw output lib classes_out
 
-          # 1. Tải công cụ dịch ngược (Decompiler) CFR
+          # 1. Tải bộ dịch ngược CFR [cite: 1, 11]
           wget https://www.benf.org/other/cfr/cfr-0.152.jar -O cfr.jar
 
-          # 2. Tải Spigot/Bukkit API (Thư viện bắt buộc để biên dịch không lỗi)
-          # Lưu ý: Bạn có thể thay đổi link này để phù hợp với phiên bản Minecraft của plugin
-          wget https://hub.spigotmc.org/nexus/content/repositories/snapshots/org/spigotmc/spigot-api/1.20-R0.1-SNAPSHOT/spigot-api-1.20-R0.1-20230615.111818-47.jar -O lib/spigot-api.jar
+          # 2. Tải Spigot API (Link dự phòng ổn định hơn) [cite: 2]
+          wget https://repo.codemc.io/repository/maven-public/org/spigotmc/spigot-api/1.20.1-R0.1-SNAPSHOT/spigot-api-1.20.1-R0.1-20230627.081525-24.jar -O lib/spigot-api.jar
 
           for plugin in *.jar; do
-            if [ "$plugin" != "cfr.jar" ]; then
-              echo "--- Đang phẫu thuật chuyên sâu: $plugin ---"
+            if [[ "$plugin" != "cfr.jar" && "$plugin" != "lib/spigot-api.jar" ]]; then
+              echo "--- Đang xử lý: $plugin ---"
               
-              # 3. Dịch ngược JAR sang mã nguồn .java sạch
+              # 3. Dịch ngược sang Java [cite: 4]
               java -jar cfr.jar "$plugin" --outputdir src_raw
               
-              # 4. Xóa các package độc hại trong source code (Debugger/Javassist)
+              # 4. Xóa mã độc (Backdoor/Builder) [cite: 5]
               rm -rf src_raw/com/thiccindustries
               rm -rf src_raw/javassist
               
-              # 5. Đổi tên Package và Class trong tất cả file .java
+              # 5. Đổi tên Package và Class trong code .java [cite: 5]
               find src_raw -type f -name "*.java" -exec sed -i 's/org\.shyamstudio\.donutTPA/me\.aris\.ArisTPA\.ArisTPA/g' {} +
               find src_raw -type f -name "*.java" -exec sed -i 's/DonutTPA/ArisTPA/g' {} +
 
-              # 6. Tái cấu trúc thư mục source theo Package mới
+              # 6. Tái cấu trúc thư mục [cite: 6]
               mkdir -p src_rebuild/me/aris/ArisTPA/ArisTPA
               if [ -d "src_raw/org/shyamstudio/donutTPA" ]; then
                 cp -r src_raw/org/shyamstudio/donutTPA/* src_rebuild/me/aris/ArisTPA/ArisTPA/
-                # Đổi tên file Java chính
+                # Đổi tên file Java chính [cite: 7]
                 mv src_rebuild/me/aris/ArisTPA/ArisTPA/DonutTPA.java src_rebuild/me/aris/ArisTPA/ArisTPA/ArisTPA.java || true
-                rm -rf src_raw/org
               fi
 
-              # 7. Sửa file plugin.yml (để server nhận diện đúng Main Class mới)
+              # 7. Sửa file cấu hình plugin.yml [cite: 8]
               if [ -f "src_raw/plugin.yml" ]; then
                 sed -i 's/main: .*/main: me.aris.ArisTPA.ArisTPA.ArisTPA/g' src_raw/plugin.yml
                 sed -i 's/name: .*/name: ArisTPA/g' src_raw/plugin.yml
                 sed -i 's/author: .*/author: VennLMAO/g' src_raw/plugin.yml
                 cp src_raw/plugin.yml classes_out/
               fi
-              # Sao chép các file config khác (nếu có)
-              cp src_raw/*.yml src_raw/*.json classes_out/ 2>/dev/null || true
 
-              # 8. BIÊN DỊCH (Re-Compile) lại từ .java sang .class
-              # Dùng javac với Classpath là Spigot API
+              # 8. Biên dịch lại thành file .class chuẩn 
               find src_rebuild -name "*.java" > sources.txt
               javac -cp "lib/*" -d classes_out @sources.txt
 
-              # 9. ĐÓNG GÓI LẠI (Build thành JAR mới)
+              # 9. Đóng gói thành JAR mới 
               cd classes_out
-              jar -cvf "../ArisTPA_Full_Build.jar" .
+              jar -cvf "../ArisTPA_VennLMAO.jar" .
               cd ..
               
-              mv ArisTPA_Full_Build.jar "output/ArisTPA_VennLMAO.jar"
-              rm -rf src_raw src_rebuild classes_out sources.txt
+              mv ArisTPA_VennLMAO.jar output/ArisTPA_VennLMAO.jar
             fi
           done
 
-      - name: Upload Clean ArisTPA Jar (v4)
+      - name: Upload Clean ArisTPA (v4)
         uses: actions/upload-artifact@v4
         with:
           name: ArisTPA-New-Build
           path: output/
-          retention-days: 1
